@@ -33,9 +33,9 @@ android {
         }
 
         release {
-            multiDexEnabled true
-            minifyEnabled false
-            shrinkResources false
+            multiDexEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles 'proguard-project.txt'
             testCoverageEnabled false
         }

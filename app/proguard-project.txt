@@ -12,6 +12,14 @@
 -keep public class * extends android.app.backup.BackupAgentHelper
 -keep public class * extends android.preference.Preference
 -keep public class com.android.vending.licensing.ILicensingService
+
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keepattributes JavascriptInterface
+
+
+
 -keep public class acr.browser.lightning.reading.*
 
 -assumenosideeffects class android.util.Log {
