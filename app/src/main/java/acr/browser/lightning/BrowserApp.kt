@@ -4,13 +4,18 @@ import acr.browser.lightning.database.bookmark.BookmarkExporter
 import acr.browser.lightning.database.bookmark.BookmarkRepository
 import acr.browser.lightning.device.BuildInfo
 import acr.browser.lightning.device.BuildType
-import acr.browser.lightning.di.*
+import acr.browser.lightning.di.AppComponent
+import acr.browser.lightning.di.DaggerAppComponent
+import acr.browser.lightning.di.DatabaseScheduler
+import acr.browser.lightning.di.injector
 import acr.browser.lightning.log.Logger
 import acr.browser.lightning.preference.DeveloperPreferences
 import acr.browser.lightning.utils.FileUtils
 import acr.browser.lightning.utils.MemoryLeakUtils
+import acr.browser.lightning.utils.installMultiDex
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.os.Build
 import android.os.StrictMode
 import android.webkit.WebView
@@ -32,7 +37,14 @@ class BrowserApp : Application() {
     @Inject internal lateinit var logger: Logger
     @Inject internal lateinit var buildInfo: BuildInfo
 
-    val applicationComponent: AppComponent by lazy { appComponent }
+    lateinit var applicationComponent: AppComponent
+
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        if (BuildConfig.DEBUG && Build.VERSION.SDK_INT < 21) {
+            installMultiDex(context = base)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -45,6 +57,12 @@ class BrowserApp : Application() {
                 .detectAll()
                 .penaltyLog()
                 .build())
+        }
+
+        if (Build.VERSION.SDK_INT >= 28) {
+            if (getProcessName() == "$packageName:incognito") {
+                WebView.setDataDirectorySuffix("incognito")
+            }
         }
 
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -68,10 +86,10 @@ class BrowserApp : Application() {
             }
         }
 
-        appComponent = DaggerAppComponent.builder().appModule(AppModule(
-            this,
-            BuildInfo(createBuildType())
-        )).build()
+        applicationComponent = DaggerAppComponent.builder()
+            .application(this)
+            .buildInfo(createBuildInfo())
+            .build()
         injector.inject(this)
 
         Single.fromCallable(bookmarkModel::count)
@@ -107,22 +125,17 @@ class BrowserApp : Application() {
     /**
      * Create the [BuildType] from the [BuildConfig].
      */
-    private fun createBuildType() = when {
+    private fun createBuildInfo() = BuildInfo(when {
         BuildConfig.DEBUG -> BuildType.DEBUG
         else -> BuildType.RELEASE
-    }
+    })
 
     companion object {
-
         private const val TAG = "BrowserApp"
 
         init {
             AppCompatDelegate.setCompatVectorFromResourcesEnabled(Build.VERSION.SDK_INT == Build.VERSION_CODES.KITKAT)
         }
-
-        @JvmStatic
-        lateinit var appComponent: AppComponent
-
     }
 
 }

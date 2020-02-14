@@ -15,6 +15,7 @@ import acr.browser.lightning.utils.ThemeUtils
 import android.app.Application
 import android.graphics.Bitmap
 import androidx.core.net.toUri
+import dagger.Reusable
 import io.reactivex.Scheduler
 import io.reactivex.Single
 import java.io.File
@@ -25,6 +26,7 @@ import javax.inject.Inject
 /**
  * Created by anthonycr on 9/23/18.
  */
+@Reusable
 class BookmarkPageFactory @Inject constructor(
     private val application: Application,
     private val bookmarkModel: BookmarkRepository,
@@ -69,7 +71,7 @@ class BookmarkPageFactory @Inject constructor(
         .ignoreElements()
         .toSingle {
             cacheIcon(ThemeUtils.createThemedBitmap(application, R.drawable.ic_folder, false), folderIconFile)
-            cacheIcon(faviconModel.getDefaultBitmapForString(null), defaultIconFile)
+            cacheIcon(faviconModel.createDefaultBitmapForTitle(null), defaultIconFile)
 
             "$FILE${createBookmarkPage(null)}"
         }
@@ -119,7 +121,7 @@ class BookmarkPageFactory @Inject constructor(
         val iconUrl = if (bookmarkUri != null) {
             val faviconFile = FaviconModel.getFaviconCacheFile(application, bookmarkUri)
             if (!faviconFile.exists()) {
-                val defaultFavicon = faviconModel.getDefaultBitmapForString(entry.title)
+                val defaultFavicon = faviconModel.createDefaultBitmapForTitle(entry.title)
                 faviconModel.cacheFaviconForUrl(defaultFavicon, entry.url)
                     .subscribeOn(diskScheduler)
                     .subscribe()

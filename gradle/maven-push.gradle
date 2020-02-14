@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /*
  * Copyright 2013 Chris Banes
  *
@@ -129,3 +130,6 @@ afterEvaluate { project ->
         archives androidJavadocsJar
     }
 }
+=======
+// Empty file to fix I2P build
+>>>>>>> 2eb3f5f90ab63a8f6007f3f7fdfda479bef5ffa9

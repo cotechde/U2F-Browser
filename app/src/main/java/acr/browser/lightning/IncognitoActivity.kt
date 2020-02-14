@@ -12,13 +12,19 @@ import io.reactivex.Completable
 
 class IncognitoActivity : BrowserActivity() {
 
+    override fun provideThemeOverride(): Int? = R.style.Theme_DarkTheme
+
     @Suppress("DEPRECATION")
     public override fun updateCookiePreference(): Completable = Completable.fromAction {
         val cookieManager = CookieManager.getInstance()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
             CookieSyncManager.createInstance(this@IncognitoActivity)
         }
-        cookieManager.setAcceptCookie(userPreferences.incognitoCookiesEnabled)
+        if (Capabilities.FULL_INCOGNITO.isSupported) {
+            cookieManager.setAcceptCookie(userPreferences.cookiesEnabled)
+        } else {
+            cookieManager.setAcceptCookie(userPreferences.incognitoCookiesEnabled)
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -39,7 +45,7 @@ class IncognitoActivity : BrowserActivity() {
 
     override fun isIncognito() = true
 
-    override fun closeActivity() = closeDrawers(this::closeBrowser)
+    override fun closeActivity() = closeDrawers(::closeBrowser)
 
     companion object {
         /**

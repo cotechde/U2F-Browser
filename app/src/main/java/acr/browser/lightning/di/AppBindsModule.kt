@@ -6,6 +6,8 @@ import acr.browser.lightning.adblock.source.AssetsHostsDataSource
 import acr.browser.lightning.adblock.source.HostsDataSource
 import acr.browser.lightning.adblock.source.HostsDataSourceProvider
 import acr.browser.lightning.adblock.source.PreferencesHostsDataSourceProvider
+import acr.browser.lightning.browser.cleanup.DelegatingExitCleanup
+import acr.browser.lightning.browser.cleanup.ExitCleanup
 import acr.browser.lightning.database.adblock.HostsDatabase
 import acr.browser.lightning.database.adblock.HostsRepository
 import acr.browser.lightning.database.allowlist.AdBlockAllowListDatabase
@@ -25,32 +27,35 @@ import dagger.Module
  * Dependency injection module used to bind implementations to interfaces.
  */
 @Module
-abstract class AppBindsModule {
+interface AppBindsModule {
 
     @Binds
-    abstract fun provideBookmarkModel(bookmarkDatabase: BookmarkDatabase): BookmarkRepository
+    fun bindsExitCleanup(delegatingExitCleanup: DelegatingExitCleanup): ExitCleanup
 
     @Binds
-    abstract fun provideDownloadsModel(downloadsDatabase: DownloadsDatabase): DownloadsRepository
+    fun bindsBookmarkModel(bookmarkDatabase: BookmarkDatabase): BookmarkRepository
 
     @Binds
-    abstract fun providesHistoryModel(historyDatabase: HistoryDatabase): HistoryRepository
+    fun bindsDownloadsModel(downloadsDatabase: DownloadsDatabase): DownloadsRepository
 
     @Binds
-    abstract fun providesAdBlockAllowListModel(adBlockAllowListDatabase: AdBlockAllowListDatabase): AdBlockAllowListRepository
+    fun bindsHistoryModel(historyDatabase: HistoryDatabase): HistoryRepository
 
     @Binds
-    abstract fun providesAllowListModel(sessionAllowListModel: SessionAllowListModel): AllowListModel
+    fun bindsAdBlockAllowListModel(adBlockAllowListDatabase: AdBlockAllowListDatabase): AdBlockAllowListRepository
 
     @Binds
-    abstract fun providesSslWarningPreferences(sessionSslWarningPreferences: SessionSslWarningPreferences): SslWarningPreferences
+    fun bindsAllowListModel(sessionAllowListModel: SessionAllowListModel): AllowListModel
 
     @Binds
-    abstract fun providesHostsDataSource(assetsHostsDataSource: AssetsHostsDataSource): HostsDataSource
+    fun bindsSslWarningPreferences(sessionSslWarningPreferences: SessionSslWarningPreferences): SslWarningPreferences
 
     @Binds
-    abstract fun providesHostsRepository(hostsDatabase: HostsDatabase): HostsRepository
+    fun bindsHostsDataSource(assetsHostsDataSource: AssetsHostsDataSource): HostsDataSource
 
     @Binds
-    abstract fun providesHostsDataSourceProvider(preferencesHostsDataSourceProvider: PreferencesHostsDataSourceProvider): HostsDataSourceProvider
+    fun bindsHostsRepository(hostsDatabase: HostsDatabase): HostsRepository
+
+    @Binds
+    fun bindsHostsDataSourceProvider(preferencesHostsDataSourceProvider: PreferencesHostsDataSourceProvider): HostsDataSourceProvider
 }

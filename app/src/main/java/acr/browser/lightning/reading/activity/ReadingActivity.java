@@ -3,6 +3,7 @@ package acr.browser.lightning.reading.activity;
 import android.animation.ObjectAnimator;
 import android.app.Dialog;
 import android.app.ProgressDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
@@ -17,9 +18,8 @@ import android.widget.TextView;
 
 import javax.inject.Inject;
 
-import acr.browser.lightning.BrowserApp;
 import acr.browser.lightning.R;
-import acr.browser.lightning.constant.Constants;
+import acr.browser.lightning.di.Injector;
 import acr.browser.lightning.di.MainScheduler;
 import acr.browser.lightning.di.NetworkScheduler;
 import acr.browser.lightning.dialog.BrowserDialog;
@@ -40,6 +40,20 @@ import io.reactivex.Single;
 import io.reactivex.disposables.Disposable;
 
 public class ReadingActivity extends AppCompatActivity {
+
+    private static final String LOAD_READING_URL = "ReadingUrl";
+
+    /**
+     * Launches this activity with the necessary URL argument.
+     *
+     * @param context The context needed to launch the activity.
+     * @param url     The URL that will be loaded into reading mode.
+     */
+    public static void launch(@NonNull Context context, @NonNull String url) {
+        final Intent intent = new Intent(context, ReadingActivity.class);
+        intent.putExtra(LOAD_READING_URL, url);
+        context.startActivity(intent);
+    }
 
     private static final String TAG = "ReadingActivity";
 
@@ -65,7 +79,7 @@ public class ReadingActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        BrowserApp.getAppComponent().inject(this);
+        Injector.getInjector(this).inject(this);
 
         overridePendingTransition(R.anim.slide_in_from_right, R.anim.fade_out_scale);
         mInvert = mUserPreferences.getInvertColors();
@@ -132,12 +146,12 @@ public class ReadingActivity extends AppCompatActivity {
         if (intent == null) {
             return false;
         }
-        mUrl = intent.getStringExtra(Constants.LOAD_READING_URL);
+        mUrl = intent.getStringExtra(LOAD_READING_URL);
         if (mUrl == null) {
             return false;
         }
         if (getSupportActionBar() != null) {
-            getSupportActionBar().setTitle(Utils.getDomainName(mUrl));
+            getSupportActionBar().setTitle(Utils.getDisplayDomainName(mUrl));
         }
 
         mProgressDialog = new ProgressDialog(ReadingActivity.this);
@@ -260,10 +274,10 @@ public class ReadingActivity extends AppCompatActivity {
         switch (item.getItemId()) {
             case R.id.invert_item:
                 mUserPreferences.setInvertColors(!mInvert);
-                Intent read = new Intent(this, ReadingActivity.class);
-                read.putExtra(Constants.LOAD_READING_URL, mUrl);
-                startActivity(read);
-                finish();
+                if (mUrl != null) {
+                    ReadingActivity.launch(this, mUrl);
+                    finish();
+                }
                 break;
             case R.id.text_size_item:
 

@@ -6,6 +6,8 @@ import acr.browser.lightning.adblock.BloomFilterAdBlocker
 import acr.browser.lightning.adblock.source.HostsSourceType
 import acr.browser.lightning.adblock.source.selectedHostsSource
 import acr.browser.lightning.adblock.source.toPreferenceIndex
+import acr.browser.lightning.di.DiskScheduler
+import acr.browser.lightning.di.MainScheduler
 import acr.browser.lightning.di.injector
 import acr.browser.lightning.dialog.BrowserDialog
 import acr.browser.lightning.dialog.DialogItem
@@ -17,15 +19,12 @@ import android.net.Uri
 import android.os.Bundle
 import android.preference.Preference
 import io.reactivex.Maybe
-import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.Scheduler
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.plusAssign
 import io.reactivex.rxkotlin.subscribeBy
-import io.reactivex.schedulers.Schedulers
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okio.buffer
-import okio.sink
-import okio.source
+import okhttp3.HttpUrl
+import okio.Okio
 import java.io.File
 import java.io.IOException
 import javax.inject.Inject
@@ -36,6 +35,8 @@ import javax.inject.Inject
 class AdBlockSettingsFragment : AbstractSettingsFragment() {
 
     @Inject internal lateinit var userPreferences: UserPreferences
+    @Inject @field:MainScheduler internal lateinit var mainScheduler: Scheduler
+    @Inject @field:DiskScheduler internal lateinit var diskScheduler: Scheduler
     @Inject internal lateinit var bloomFilterAdBlocker: BloomFilterAdBlocker
 
     private var recentSummaryUpdater: SummaryUpdater? = null
@@ -140,7 +141,7 @@ class AdBlockSettingsFragment : AbstractSettingsFragment() {
             currentText = userPreferences.hostsRemoteFile,
             action = R.string.action_ok,
             textInputListener = {
-                val url = it.toHttpUrlOrNull()
+                val url = HttpUrl.parse(it)
                     ?: return@showEditText run { activity?.toast(R.string.problem_download) }
                 userPreferences.hostsSource = HostsSourceType.Remote(url).toPreferenceIndex()
                 userPreferences.hostsRemoteFile = it
@@ -155,8 +156,8 @@ class AdBlockSettingsFragment : AbstractSettingsFragment() {
             if (resultCode == Activity.RESULT_OK) {
                 data?.data?.also { uri ->
                     compositeDisposable += readTextFromUri(uri)
-                        .subscribeOn(Schedulers.io())
-                        .observeOn(AndroidSchedulers.mainThread())
+                        .subscribeOn(diskScheduler)
+                        .observeOn(mainScheduler)
                         .subscribeBy(
                             onComplete = { activity?.toast(R.string.action_message_canceled) },
                             onSuccess = { file ->
@@ -187,8 +188,9 @@ class AdBlockSettingsFragment : AbstractSettingsFragment() {
 
         try {
             val outputFile = File(externalFilesDir, AD_HOSTS_FILE)
-            val input = inputStream.source()
-            val output = outputFile.sink().buffer()
+
+            val input = Okio.source(inputStream)
+            val output = Okio.buffer(Okio.sink(outputFile))
             output.writeAll(input)
             return@create it.onSuccess(outputFile)
         } catch (exception: IOException) {

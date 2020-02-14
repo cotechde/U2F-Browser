@@ -8,6 +8,7 @@ import acr.browser.lightning.adblock.util.DefaultBloomFilter
 import acr.browser.lightning.adblock.util.DelegatingBloomFilter
 import acr.browser.lightning.adblock.util.`object`.JvmObjectStore
 import acr.browser.lightning.adblock.util.`object`.ObjectStore
+import acr.browser.lightning.adblock.util.hash.MurmurHashHostAdapter
 import acr.browser.lightning.adblock.util.hash.MurmurHashStringAdapter
 import acr.browser.lightning.database.adblock.Host
 import acr.browser.lightning.database.adblock.HostsRepository
@@ -17,13 +18,13 @@ import acr.browser.lightning.di.MainScheduler
 import acr.browser.lightning.extensions.toast
 import acr.browser.lightning.log.Logger
 import android.app.Application
+import android.net.Uri
 import io.reactivex.Maybe
 import io.reactivex.Scheduler
 import io.reactivex.Single
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.rxkotlin.plusAssign
 import io.reactivex.rxkotlin.subscribeBy
-import java.net.URI
 import java.net.URISyntaxException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -48,8 +49,8 @@ class BloomFilterAdBlocker @Inject constructor(
     @MainScheduler private val mainScheduler: Scheduler
 ) : AdBlocker {
 
-    private val bloomFilter: DelegatingBloomFilter<String> = DelegatingBloomFilter()
-    private val objectStore: ObjectStore<DefaultBloomFilter<String>> = JvmObjectStore(application, MurmurHashStringAdapter())
+    private val bloomFilter: DelegatingBloomFilter<Host> = DelegatingBloomFilter()
+    private val objectStore: ObjectStore<DefaultBloomFilter<Host>> = JvmObjectStore(application, MurmurHashStringAdapter())
 
     private val compositeDisposable = CompositeDisposable()
 
@@ -77,14 +78,13 @@ class BloomFilterAdBlocker @Inject constructor(
                         .flatMapMaybe {
                             when (it) {
                                 is HostsResult.Success -> Maybe.just(it.hosts)
-                                is HostsResult.Failure ->
-                                    Maybe.empty<List<String>>().doOnComplete {
-                                        logger.log(TAG, "Unable to load hosts", it.cause)
-                                    }
+                                is HostsResult.Failure -> Maybe.empty<List<Host>>().doOnComplete {
+                                    logger.log(TAG, "Unable to load hosts", it.cause)
+                                }
                             }
                         }
-                        .map { it.map(::Host) }
                         .flatMapSingleElement {
+                            logger.log(TAG, "Loaded ${it.size} hosts")
                             // Clear out the old hosts and bloom filter now that we have the new hosts.
                             hostsRepository.removeAllHosts()
                                 .andThen(hostsRepository.addHosts(it))
@@ -112,72 +112,53 @@ class BloomFilterAdBlocker @Inject constructor(
             )
     }
 
-    private fun loadStoredBloomFilter(): Maybe<BloomFilter<String>> = Maybe.fromCallable {
+    private fun loadStoredBloomFilter(): Maybe<BloomFilter<Host>> = Maybe.fromCallable {
         objectStore.retrieve(BLOOM_FILTER_KEY)
     }
 
-    private fun createAndSaveBloomFilter(hosts: List<Host>): Single<BloomFilter<String>> = Single.fromCallable {
+    private fun createAndSaveBloomFilter(hosts: List<Host>): Single<BloomFilter<Host>> = Single.fromCallable {
         logger.log(TAG, "Constructing bloom filter from list")
 
         val bloomFilter = DefaultBloomFilter(
             numberOfElements = hosts.size,
             falsePositiveRate = 0.01,
-            hashingAlgorithm = MurmurHashStringAdapter()
+            hashingAlgorithm = MurmurHashHostAdapter()
         )
-        for (host in hosts) {
-            bloomFilter.put(host.name)
-        }
+        bloomFilter.putAll(hosts)
         objectStore.store(BLOOM_FILTER_KEY, bloomFilter)
 
         bloomFilter
     }
 
     override fun isAd(url: String): Boolean {
-        val domain = try {
-            getDomainName(url)
-        } catch (exception: URISyntaxException) {
-            logger.log(TAG, "URL '$url' is invalid", exception)
-            return false
-        }
+        val domain = url.host() ?: return false
 
-        val mightBeOnBlockList = bloomFilter.mightContain(domain.name)
+        val mightBeOnBlockList = bloomFilter.mightContain(domain)
 
-        return if (mightBeOnBlockList) {
-            val isOnBlockList = hostsRepository.containsHost(domain)
-            if (isOnBlockList) {
-                logger.log(TAG, "URL '$url' is an ad")
-            } else {
-                logger.log(TAG, "False positive for $url")
+        return when {
+            mightBeOnBlockList -> {
+                val isOnBlockList = hostsRepository.containsHost(domain)
+                if (isOnBlockList) {
+                    logger.log(TAG, "URL '$url' is an ad")
+                } else {
+                    logger.log(TAG, "False positive for $url")
+                }
+
+                isOnBlockList
             }
-
-            isOnBlockList
-        } else {
-            false
+            domain.name.startsWith("www.") -> isAd(domain.name.substring(4))
+            else -> false
         }
     }
 
     /**
-     * Returns the probable domain name for a given URL
-     *
-     * @param url the url to parse
-     * @return returns the domain
-     * @throws URISyntaxException throws an exception if the string cannot form a URI
+     * Extract the [Host] from a [String] representing a URL. Returns null if no host was extracted.
      */
-    @Throws(URISyntaxException::class)
-    private fun getDomainName(url: String): Host {
-        val host = url.indexOf('/', 8)
-            .takeIf { it != -1 }
-            ?.let(url::take)
-            ?: url
-
-        val uri = URI(host)
-        val domain = uri.host ?: return Host(host)
-
-        return Host(if (domain.startsWith("www.")) {
-            domain.substring(4)
-        } else {
-            domain
-        })
+    private fun String.host(): Host? = try {
+        Uri.parse(this).host?.let(::Host)
+    } catch (exception: URISyntaxException) {
+        logger.log(TAG, "Invalid URL: $this", exception)
+        null
     }
 
     companion object {

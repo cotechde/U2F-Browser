@@ -1,14 +1,12 @@
 package acr.browser.lightning.browser
 
+import acr.browser.lightning.R
 import acr.browser.lightning.di.DatabaseScheduler
 import acr.browser.lightning.di.DiskScheduler
 import acr.browser.lightning.di.MainScheduler
 import acr.browser.lightning.log.Logger
 import acr.browser.lightning.search.SearchEngineProvider
-import acr.browser.lightning.utils.FileUtils
-import acr.browser.lightning.utils.Option
-import acr.browser.lightning.utils.UrlUtils
-import acr.browser.lightning.utils.value
+import acr.browser.lightning.utils.*
 import acr.browser.lightning.view.*
 import android.app.Activity
 import android.app.Application
@@ -54,14 +52,23 @@ class TabsManager @Inject constructor(
     private var isInitialized = false
     private var postInitializationWorkList = emptyList<() -> Unit>()
 
+    /**
+     * Adds a listener to be notified when the number of tabs changes.
+     */
     fun addTabNumberChangedListener(listener: ((Int) -> Unit)) {
         tabNumberListeners += listener
     }
 
+    /**
+     * Cancels any pending work that was scheduled to run after initialization.
+     */
     fun cancelPendingWork() {
         postInitializationWorkList = emptyList()
     }
 
+    /**
+     * Executes the [runnable] after the manager has been initialized.
+     */
     fun doAfterInitialization(runnable: () -> Unit) {
         if (isInitialized) {
             runnable()
@@ -95,7 +102,7 @@ class TabsManager @Inject constructor(
             .subscribeOn(mainScheduler)
             .observeOn(databaseScheduler)
             .flatMapObservable {
-                return@flatMapObservable if (incognito) {
+                if (incognito) {
                     initializeIncognitoMode(it.value())
                 } else {
                     initializeRegularMode(it.value(), activity)
@@ -110,9 +117,7 @@ class TabsManager @Inject constructor(
      * Returns an [Observable] that emits the [TabInitializer] for incognito mode.
      */
     private fun initializeIncognitoMode(initialUrl: String?): Observable<TabInitializer> =
-        Observable.fromCallable {
-            return@fromCallable initialUrl?.let(::UrlInitializer) ?: homePageInitializer
-        }
+        Observable.fromCallable { initialUrl?.let(::UrlInitializer) ?: homePageInitializer }
 
     /**
      * Returns an [Observable] that emits the [TabInitializer] for normal operation mode.
@@ -136,10 +141,10 @@ class TabsManager @Inject constructor(
      */
     fun extractSearchFromIntent(intent: Intent): String? {
         val query = intent.getStringExtra(SearchManager.QUERY)
-        val searchUrl = "${searchEngineProvider.provideSearchEngine().queryUrl}${UrlUtils.QUERY_PLACE_HOLDER}"
+        val searchUrl = "${searchEngineProvider.provideSearchEngine().queryUrl}$QUERY_PLACE_HOLDER"
 
         return if (query?.isNotBlank() == true) {
-            UrlUtils.smartUrlFilter(query, true, searchUrl)
+            smartUrlFilter(query, true, searchUrl)
         } else {
             null
         }
@@ -150,16 +155,17 @@ class TabsManager @Inject constructor(
      * saved on disk. Can potentially be empty.
      */
     private fun restorePreviousTabs(): Observable<TabInitializer> = readSavedStateFromDisk()
-        .map { bundle ->
+        .map { (bundle, title) ->
             return@map bundle.getString(URL_KEY)?.let { url ->
                 when {
-                    UrlUtils.isBookmarkUrl(url) -> bookmarkPageInitializer
-                    UrlUtils.isDownloadsUrl(url) -> downloadPageInitializer
-                    UrlUtils.isStartPageUrl(url) -> homePageInitializer
-                    UrlUtils.isHistoryUrl(url) -> historyPageInitializer
+                    url.isBookmarkUrl() -> bookmarkPageInitializer
+                    url.isDownloadsUrl() -> downloadPageInitializer
+                    url.isStartPageUrl() -> homePageInitializer
+                    url.isHistoryUrl() -> historyPageInitializer
                     else -> homePageInitializer
                 }
-            } ?: BundleInitializer(bundle)
+            } ?: FreezableBundleInitializer(bundle, title
+                ?: application.getString(R.string.tab_frozen))
         }
 
 
@@ -321,11 +327,11 @@ class TabsManager @Inject constructor(
         val outState = Bundle(ClassLoader.getSystemClassLoader())
         logger.log(TAG, "Saving tab state")
         tabList
-            .filter { it.url.isNotBlank() }
             .withIndex()
             .forEach { (index, tab) ->
-                if (!UrlUtils.isSpecialUrl(tab.url)) {
+                if (!tab.url.isSpecialUrl()) {
                     outState.putBundle(BUNDLE_KEY + index, tab.saveState())
+                    outState.putString(TAB_TITLE_KEY + index, tab.title)
                 } else {
                     outState.putBundle(BUNDLE_KEY + index, Bundle().apply {
                         putString(URL_KEY, tab.url)
@@ -348,14 +354,30 @@ class TabsManager @Inject constructor(
      * on disk. After the list of bundle [Bundle] is read off disk, the old state will be deleted.
      * Can potentially be empty.
      */
-    private fun readSavedStateFromDisk(): Observable<Bundle> = Maybe
+    private fun readSavedStateFromDisk(): Observable<Pair<Bundle, String?>> = Maybe
         .fromCallable { FileUtils.readBundleFromStorage(application, BUNDLE_STORAGE) }
         .flattenAsObservable { bundle ->
             bundle.keySet()
                 .filter { it.startsWith(BUNDLE_KEY) }
-                .map(bundle::getBundle)
+                .mapNotNull { bundleKey ->
+                    bundle.getBundle(bundleKey)?.let {
+                        Pair(
+                            it,
+                            bundle.getString(TAB_TITLE_KEY + bundleKey.extractNumberFromEnd())
+                        )
+                    }
+                }
         }
         .doOnNext { logger.log(TAG, "Restoring previous WebView state now") }
+
+    private fun String.extractNumberFromEnd(): String {
+        val underScore = lastIndexOf('_')
+        return if (underScore in 0 until length) {
+            substring(underScore + 1)
+        } else {
+            ""
+        }
+    }
 
     /**
      * Returns the index of the current tab.
@@ -403,6 +425,7 @@ class TabsManager @Inject constructor(
         private const val TAG = "TabsManager"
 
         private const val BUNDLE_KEY = "WEBVIEW_"
+        private const val TAB_TITLE_KEY = "TITLE_"
         private const val URL_KEY = "URL_KEY"
         private const val BUNDLE_STORAGE = "SAVED_TABS.parcel"
     }

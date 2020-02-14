@@ -1,11 +1,13 @@
 package acr.browser.lightning.di
 
-import acr.browser.lightning.BrowserApp
-import acr.browser.lightning.BuildConfig
 import acr.browser.lightning.device.BuildInfo
+import acr.browser.lightning.device.BuildType
 import acr.browser.lightning.html.ListPageReader
 import acr.browser.lightning.html.bookmark.BookmarkPageReader
 import acr.browser.lightning.html.homepage.HomePageReader
+import acr.browser.lightning.js.InvertPage
+import acr.browser.lightning.js.TextReflow
+import acr.browser.lightning.js.ThemeColor
 import acr.browser.lightning.log.AndroidLogger
 import acr.browser.lightning.log.Logger
 import acr.browser.lightning.log.NoOpLogger
@@ -45,58 +47,51 @@ import javax.inject.Qualifier
 import javax.inject.Singleton
 
 @Module
-class AppModule(private val browserApp: BrowserApp, private val buildInfo: BuildInfo) {
-
-    @Provides
-    fun provideBuildInfo() = buildInfo
+class AppModule {
 
     @Provides
     @MainHandler
     fun provideMainHandler() = Handler(Looper.getMainLooper())
 
     @Provides
-    fun provideApplication(): Application = browserApp
-
-    @Provides
-    fun provideContext(): Context = browserApp.applicationContext
+    fun provideContext(application: Application): Context = application.applicationContext
 
     @Provides
     @UserPrefs
-    fun provideUserPreferences(): SharedPreferences = browserApp.getSharedPreferences("settings", 0)
+    fun provideUserPreferences(application: Application): SharedPreferences = application.getSharedPreferences("settings", 0)
 
     @Provides
     @DevPrefs
-    fun provideDebugPreferences(): SharedPreferences = browserApp.getSharedPreferences("developer_settings", 0)
+    fun provideDebugPreferences(application: Application): SharedPreferences = application.getSharedPreferences("developer_settings", 0)
 
     @Provides
     @AdBlockPrefs
-    fun provideAdBlockPreferences(): SharedPreferences = browserApp.getSharedPreferences("ad_block_settings", 0)
-
-
-    @Provides
-    fun providesAssetManager(): AssetManager = browserApp.assets
+    fun provideAdBlockPreferences(application: Application): SharedPreferences = application.getSharedPreferences("ad_block_settings", 0)
 
     @Provides
-    fun providesClipboardManager() = browserApp.getSystemService<ClipboardManager>()!!
+    fun providesAssetManager(application: Application): AssetManager = application.assets
 
     @Provides
-    fun providesInputMethodManager() = browserApp.getSystemService<InputMethodManager>()!!
+    fun providesClipboardManager(application: Application) = application.getSystemService<ClipboardManager>()!!
 
     @Provides
-    fun providesDownloadManager() = browserApp.getSystemService<DownloadManager>()!!
+    fun providesInputMethodManager(application: Application) = application.getSystemService<InputMethodManager>()!!
 
     @Provides
-    fun providesConnectivityManager() = browserApp.getSystemService<ConnectivityManager>()!!
+    fun providesDownloadManager(application: Application) = application.getSystemService<DownloadManager>()!!
 
     @Provides
-    fun providesNotificationManager() = browserApp.getSystemService<NotificationManager>()!!
+    fun providesConnectivityManager(application: Application) = application.getSystemService<ConnectivityManager>()!!
 
     @Provides
-    fun providesWindowManager() = browserApp.getSystemService<WindowManager>()!!
+    fun providesNotificationManager(application: Application) = application.getSystemService<NotificationManager>()!!
+
+    @Provides
+    fun providesWindowManager(application: Application) = application.getSystemService<WindowManager>()!!
 
     @RequiresApi(Build.VERSION_CODES.N_MR1)
     @Provides
-    fun providesShortcutManager() = browserApp.getSystemService<ShortcutManager>()!!
+    fun providesShortcutManager(application: Application) = application.getSystemService<ShortcutManager>()!!
 
     @Provides
     @DatabaseScheduler
@@ -125,65 +120,49 @@ class AppModule(private val browserApp: BrowserApp, private val buildInfo: Build
     @Singleton
     @Provides
     fun providesSuggestionsRequestFactory(cacheControl: CacheControl): RequestFactory = object : RequestFactory {
-
         override fun createSuggestionsRequest(httpUrl: HttpUrl, encoding: String): Request {
             return Request.Builder().url(httpUrl)
                 .addHeader("Accept-Charset", encoding)
                 .cacheControl(cacheControl)
                 .build()
         }
+    }
 
+    private fun createInterceptorWithMaxCacheAge(maxCacheAgeSeconds: Long) = Interceptor { chain ->
+        chain.proceed(chain.request()).newBuilder()
+            .header("cache-control", "max-age=$maxCacheAgeSeconds, max-stale=$maxCacheAgeSeconds")
+            .build()
     }
 
     @Singleton
     @Provides
     @SuggestionsClient
-    fun providesSuggestionsHttpClient(): Single<OkHttpClient> = Single.fromCallable {
+    fun providesSuggestionsHttpClient(application: Application): Single<OkHttpClient> = Single.fromCallable {
         val intervalDay = TimeUnit.DAYS.toSeconds(1)
-
-        val rewriteCacheControlInterceptor = object : Interceptor {
-            override fun intercept(chain: Interceptor.Chain): Response {
-                val originalResponse = chain.proceed(chain.request())
-                return originalResponse.newBuilder()
-                    .header("cache-control", "max-age=$intervalDay, max-stale=$intervalDay")
-                    .build()
-            }
-        }
-
-        val suggestionsCache = File(browserApp.cacheDir, "suggestion_responses")
+        val suggestionsCache = File(application.cacheDir, "suggestion_responses")
 
         return@fromCallable OkHttpClient.Builder()
             .cache(Cache(suggestionsCache, FileUtils.megabytesToBytes(1)))
-            .addNetworkInterceptor(rewriteCacheControlInterceptor)
+            .addNetworkInterceptor(createInterceptorWithMaxCacheAge(intervalDay))
             .build()
     }.cache()
 
     @Singleton
     @Provides
     @HostsClient
-    fun providesHostsHttpClient(): Single<OkHttpClient> = Single.fromCallable {
-        val intervalDay = TimeUnit.DAYS.toSeconds(365)
-
-        val rewriteCacheControlInterceptor = object : Interceptor {
-            override fun intercept(chain: Interceptor.Chain): Response {
-                val originalResponse = chain.proceed(chain.request())
-                return originalResponse.newBuilder()
-                    .header("cache-control", "max-age=$intervalDay, max-stale=$intervalDay")
-                    .build()
-            }
-        }
-
-        val suggestionsCache = File(browserApp.cacheDir, "hosts_cache")
+    fun providesHostsHttpClient(application: Application): Single<OkHttpClient> = Single.fromCallable {
+        val intervalYear = TimeUnit.DAYS.toSeconds(365)
+        val suggestionsCache = File(application.cacheDir, "hosts_cache")
 
         return@fromCallable OkHttpClient.Builder()
             .cache(Cache(suggestionsCache, FileUtils.megabytesToBytes(5)))
-            .addNetworkInterceptor(rewriteCacheControlInterceptor)
+            .addNetworkInterceptor(createInterceptorWithMaxCacheAge(intervalYear))
             .build()
     }.cache()
 
     @Provides
     @Singleton
-    fun provideLogger(): Logger = if (BuildConfig.DEBUG) {
+    fun provideLogger(buildInfo: BuildInfo): Logger = if (buildInfo.buildType == BuildType.DEBUG) {
         AndroidLogger()
     } else {
         NoOpLogger()
@@ -191,7 +170,7 @@ class AppModule(private val browserApp: BrowserApp, private val buildInfo: Build
 
     @Provides
     @Singleton
-    fun provideI2PAndroidHelper(): I2PAndroidHelper = I2PAndroidHelper(browserApp)
+    fun provideI2PAndroidHelper(application: Application): I2PAndroidHelper = I2PAndroidHelper(application)
 
     @Provides
     fun providesListPageReader(): ListPageReader = MezzanineGenerator.ListPageReader()
@@ -201,6 +180,15 @@ class AppModule(private val browserApp: BrowserApp, private val buildInfo: Build
 
     @Provides
     fun providesBookmarkPageReader(): BookmarkPageReader = MezzanineGenerator.BookmarkPageReader()
+
+    @Provides
+    fun providesTextReflow(): TextReflow = MezzanineGenerator.TextReflow()
+
+    @Provides
+    fun providesThemeColor(): ThemeColor = MezzanineGenerator.ThemeColor()
+
+    @Provides
+    fun providesInvertPage(): InvertPage = MezzanineGenerator.InvertPage()
 
 }
 

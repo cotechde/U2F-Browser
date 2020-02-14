@@ -30,9 +30,23 @@ class DefaultBloomFilterTest {
             MurmurHashStringAdapter()
         )
         for (i in 0..MAX_TEST_VALUE) {
-            val entry = i.toString()
-            bloomFilter.put(entry)
-            assertThat(bloomFilter.mightContain(entry)).isTrue()
+            bloomFilter.put(i.toString())
+            assertThat(bloomFilter.mightContain(i.toString())).isTrue()
+        }
+    }
+
+    @Test
+    fun `strings may be present after adding collection to filter`() {
+        val bloomFilter: BloomFilter<String> = DefaultBloomFilter(
+            MAX_TEST_VALUE,
+            0.01,
+            MurmurHashStringAdapter()
+        )
+
+        val collection = (0..MAX_TEST_VALUE).map(Int::toString)
+        bloomFilter.putAll(collection)
+        collection.forEach {
+            assertThat(bloomFilter.mightContain(it)).isTrue()
         }
     }
 
@@ -60,6 +74,6 @@ class DefaultBloomFilterTest {
     }
 
     companion object {
-        private const val MAX_TEST_VALUE = Int.MAX_VALUE / 100
+        private const val MAX_TEST_VALUE = Int.MAX_VALUE / 1000
     }
 }
