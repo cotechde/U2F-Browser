@@ -188,7 +188,7 @@ dependencies {
     implementation 'androidx.core:core-ktx:1.2.0-alpha04'
 
     // FIDO
-    implementation 'com.github.cotechde.hwsecurity:hwsecurity-fido:2.4.1'
+    implementation 'com.github.cotechde.hwsecurity:hwsecurity-fido:3.2.1'
 }
 
 kapt {
