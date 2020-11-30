@@ -39,8 +39,11 @@ import android.webkit.WebSettings.LayoutAlgorithm
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.collection.ArrayMap
-import de.cotech.hw.fido.WebViewFidoBridge
 import androidx.core.graphics.drawable.toBitmap
+import de.cotech.hw.fido.WebViewFidoBridge
+import de.cotech.hw.fido.ui.FidoDialogOptions
+import de.cotech.hw.fido2.WebViewWebauthnBridge
+import de.cotech.hw.fido2.ui.WebauthnDialogOptions
 import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.Single
@@ -239,8 +242,18 @@ class LightningView(
             setOnTouchListener(TouchListener())
             initializeSettings()
         }
-        var webViewFidoBridge = WebViewFidoBridge.createInstanceForWebView(activity as AppCompatActivity, tab)
-        lightningWebClient.webViewFidoBridge = webViewFidoBridge;
+
+        val webauthnOptionsBuilder = WebauthnDialogOptions.builder()
+        webauthnOptionsBuilder.setShowSdkLogo(true)
+        webauthnOptionsBuilder.setAllowSkipPin(true)
+        val webViewWebauthnBridge = WebViewWebauthnBridge.createInstanceForWebView(activity as AppCompatActivity, tab, webauthnOptionsBuilder)
+        lightningWebClient.webViewWebauthnBridge = webViewWebauthnBridge
+
+        val dialogOptionsBuilder = FidoDialogOptions.builder()
+        dialogOptionsBuilder.setShowSdkLogo(true)
+        val webViewFidoBridge = WebViewFidoBridge.createInstanceForWebView(activity as AppCompatActivity, tab, dialogOptionsBuilder)
+        lightningWebClient.webViewFidoBridge = webViewFidoBridge
+
         initializePreferences()
 
         if (tabInitializer !is FreezableBundleInitializer) {

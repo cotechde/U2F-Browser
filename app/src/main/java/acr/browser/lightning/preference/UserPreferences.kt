@@ -71,7 +71,7 @@ class UserPreferences @Inject constructor(
     /**
      * The URL of the selected homepage.
      */
-    var homepage by preferences.stringPreference(HOMEPAGE, "https://u2f.hwsecurity.dev")
+    var homepage by preferences.stringPreference(HOMEPAGE, "https://webauthn.hwsecurity.dev")
 
     /**
      * True if cookies should be enabled in incognito mode, false otherwise.
